@@ -1,0 +1,3 @@
+// create a definition for the version
+// the @ denotes is a CMAKE variable
+#define TINYLANG_VERSION_STRING "@TINYLANG_VERSION_STRING@"

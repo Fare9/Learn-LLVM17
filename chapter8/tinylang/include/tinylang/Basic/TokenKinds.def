@@ -1,0 +1,75 @@
+// just put the token
+#ifndef TOK
+#define TOK(ID)
+#endif
+// in case TOK is defined, just
+// expand the ID
+#ifndef PUNCTUATOR
+#define PUNCTUATOR(ID, SP) TOK(ID)
+#endif
+// in case TOK is defined, expand
+// the ID as kw_ID
+#ifndef KEYWORD
+#define KEYWORD(ID, FLAG) TOK(kw_##ID)
+#endif
+
+// These define members of the tok::* namespace.
+
+TOK(unknown)            // Not a token.
+TOK(eof)                // End of file.
+TOK(identifier)         // abcde123
+TOK(integer_literal)    // 123, 123B, 123H
+TOK(string_literal)     // "foo", 'foo'
+
+/// puntuators, part of the statements
+PUNCTUATOR(plus, "+")
+PUNCTUATOR(minus, "-")
+PUNCTUATOR(star, "*")
+PUNCTUATOR(slash, "/")
+PUNCTUATOR(colonequal, ":=")
+PUNCTUATOR(period, ".")
+PUNCTUATOR(comma, ",")
+PUNCTUATOR(semi, ";")
+PUNCTUATOR(colon, ":")
+PUNCTUATOR(caret, "^")
+PUNCTUATOR(equal, "=")
+PUNCTUATOR(hash, "#")
+PUNCTUATOR(less, "<")
+PUNCTUATOR(greater, ">")
+PUNCTUATOR(lessequal, "<=")
+PUNCTUATOR(greaterequal, ">=")
+PUNCTUATOR(l_paren, "(")
+PUNCTUATOR(r_paren, ")")
+PUNCTUATOR(l_square, "[")
+PUNCTUATOR(r_square, "]")
+
+/// keywords used during the program
+KEYWORD(AND, KEYALL)       // kw_AND
+KEYWORD(ARRAY, KEYALL)     // kw_ARRAY
+KEYWORD(BEGIN, KEYALL)     // kw_BEGIN
+KEYWORD(CONST, KEYALL)     // kw_CONST
+KEYWORD(DIV, KEYALL)       // kw_DIV
+KEYWORD(DO, KEYALL)        // kw_DO
+KEYWORD(END, KEYALL)       // kw_END
+KEYWORD(ELSE, KEYALL)      // kw_ELSE
+KEYWORD(FROM, KEYALL)      // kw_FROM
+KEYWORD(IF, KEYALL)        // kw_IF
+KEYWORD(IMPORT, KEYALL)    // kw_IMPORT
+KEYWORD(MOD, KEYALL)       // kw_MOD
+KEYWORD(MODULE, KEYALL)    // kw_MODULE
+KEYWORD(NOT, KEYALL)       // kw_NOT
+KEYWORD(OF, KEYALL)        // kw_OF
+KEYWORD(OR, KEYALL)        // kw_OR
+KEYWORD(POINTER, KEYALL)   // kw_POINTER
+KEYWORD(PROCEDURE, KEYALL) // kw_PROCEDURE
+KEYWORD(RECORD, KEYALL)    // kw_RECORD
+KEYWORD(RETURN, KEYALL)    // kw_RETURN
+KEYWORD(THEN, KEYALL)      // kw_THEN
+KEYWORD(TO, KEYALL)        // kw_TO
+KEYWORD(TYPE, KEYALL)      // kw_TYPE
+KEYWORD(VAR, KEYALL)       // kw_VAR
+KEYWORD(WHILE, KEYALL)     // kw_WHILE
+
+#undef KEYWORD
+#undef PUNCTUATOR
+#undef TOK
