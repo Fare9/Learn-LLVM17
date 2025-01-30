@@ -205,11 +205,83 @@ namespace
             llvm::Function* function = Builder.GetInsertBlock()->getParent();
             llvm::LLVMContext& context = function->getContext();
 
-            // Create blocks for zero check and the main computation
+            // If exponent is a constant number
+            if (auto* constInt = llvm::dyn_cast<llvm::ConstantInt>(exponent)) {
+                uint64_t exp_val = constInt->getZExtValue();
+                if (exp_val == 0) {
+                    return llvm::ConstantInt::get(Int32Ty, 1);
+                }
+
+                // For small constants (< 10), directly expand the multiplication
+                if (exp_val < 10) {
+                    llvm::Value* result = base;
+                    switch(exp_val) {
+                        case 1: return base;
+                        case 2: return Builder.CreateNSWMul(base, base);
+                        case 3: {
+                            auto* temp = Builder.CreateNSWMul(base, base);
+                            return Builder.CreateNSWMul(temp, base);
+                        }
+                        case 4: {
+                            auto* temp = Builder.CreateNSWMul(base, base);
+                            return Builder.CreateNSWMul(temp, temp);
+                        }
+                        case 5: {
+                            auto* temp = Builder.CreateNSWMul(base, base);
+                            auto* temp2 = Builder.CreateNSWMul(temp, temp);
+                            return Builder.CreateNSWMul(temp2, base);
+                        }
+                        default: {
+                            // For 6-9, use sequential multiplication
+                            llvm::Value* result = base;
+                            for (uint64_t i = 1; i < exp_val; i++) {
+                                result = Builder.CreateNSWMul(result, base);
+                            }
+                            return result;
+                        }
+                    }
+                }
+                
+                // For larger constants, use a loop
+                llvm::BasicBlock* currentBlock = Builder.GetInsertBlock();
+                llvm::BasicBlock* loopBlock = llvm::BasicBlock::Create(context, "exp.loop", function);
+                llvm::BasicBlock* exitBlock = llvm::BasicBlock::Create(context, "exp.exit", function);
+                
+                // Initial setup
+                llvm::Value* counter = Builder.CreateAlloca(Int32Ty);
+                Builder.CreateStore(exponent, counter);
+                llvm::Value* result = base;
+                
+                Builder.CreateBr(loopBlock);
+                
+                // Loop block
+                Builder.SetInsertPoint(loopBlock);
+                llvm::PHINode* resultPhi = Builder.CreatePHI(base->getType(), 2, "exp.result");
+                resultPhi->addIncoming(result, currentBlock);
+                
+                llvm::Value* newResult = Builder.CreateNSWMul(resultPhi, base);
+                
+                llvm::Value* currentCount = Builder.CreateLoad(Int32Ty, counter);
+                llvm::Value* newCount = Builder.CreateSub(currentCount, 
+                    llvm::ConstantInt::get(Int32Ty, 1));
+                Builder.CreateStore(newCount, counter);
+                
+                resultPhi->addIncoming(newResult, loopBlock);
+                
+                llvm::Value* condition = Builder.CreateICmpSGT(newCount, 
+                    llvm::ConstantInt::get(Int32Ty, 1));
+                Builder.CreateCondBr(condition, loopBlock, exitBlock);
+                
+                // Exit block
+                Builder.SetInsertPoint(exitBlock);
+                return newResult;
+            }
+
+            // For variables, generate the comparison and loop logic
             llvm::BasicBlock* entryBlock = Builder.GetInsertBlock();
             llvm::BasicBlock* loopBlock = llvm::BasicBlock::Create(context, "exp.loop", function);
             llvm::BasicBlock* exitBlock = llvm::BasicBlock::Create(context, "exp.exit", function);
-
+            
             // Check if exponent is zero
             llvm::BasicBlock* zeroTrueBlock;
             llvm::BasicBlock* zeroFalseBlock;
@@ -224,8 +296,7 @@ namespace
             Builder.SetInsertPoint(zeroFalseBlock);
 
             // Initialize counter and result
-            llvm::Type* int32Ty = llvm::Type::getInt32Ty(context);
-            llvm::Value* counter = Builder.CreateAlloca(int32Ty);
+            llvm::Value* counter = Builder.CreateAlloca(Int32Ty);
             Builder.CreateStore(exponent, counter);
             llvm::Value* result = base;
 
@@ -241,17 +312,17 @@ namespace
             llvm::Value* newResult = Builder.CreateNSWMul(resultPhi, base);
 
             // Decrement counter
-            llvm::Value* currentCount = Builder.CreateLoad(int32Ty, counter);
+            llvm::Value* currentCount = Builder.CreateLoad(Int32Ty, counter);
             llvm::Value* newCount = Builder.CreateSub(currentCount, 
-                llvm::ConstantInt::get(int32Ty, 1));
+                llvm::ConstantInt::get(Int32Ty, 1));
             Builder.CreateStore(newCount, counter);
 
             // Update PHI node
             resultPhi->addIncoming(newResult, loopBlock);
 
             // Check if counter > 1
-            llvm::Value* one_const = llvm::ConstantInt::get(int32Ty, 1);
-            llvm::Value* condition = Builder.CreateICmpSGT(newCount, one_const);
+            llvm::Value* condition = Builder.CreateICmpSGT(newCount, 
+                llvm::ConstantInt::get(Int32Ty, 1));
             Builder.CreateCondBr(condition, loopBlock, exitBlock);
 
             // Exit block
