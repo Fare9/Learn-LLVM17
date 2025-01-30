@@ -1,7 +1,19 @@
 #include "Parser.h"
 
+/**
+ * When calling `parseExpr()`, we first look for
+ * the left term of the expression, we look for it
+ * calling `parseTerm()`, and `parseTerm()` itself
+ * calls the next method. We use recursion for working
+ * in the parser, and we descend in our grammar to look
+ * for the appropriate tokens. For this reason, the
+ * algorithm is called: Recursive Descend Parsing.
+ */
+
 AST *Parser::parse()
 {
+    // only call internal parsing methods
+    // and finally expect an end of input.
     AST *Res = parseCalc();
     expect(Token::eoi);
     return Res;
@@ -83,7 +95,7 @@ Expr *Parser::parseExpr()
 Expr *Parser::parseTerm()
 {
     Expr * Left = parseFactor();
-    while (Tok.isOneOf(Token::star, Token::slash, Token::rem))
+    while (Tok.isOneOf(Token::star, Token::slash, Token::rem, Token::exp))
     {
         BinaryOp::Operator Op;
 
@@ -93,8 +105,21 @@ Expr *Parser::parseTerm()
             Op = BinaryOp::Div;
         else if (Tok.is(Token::rem))
             Op = BinaryOp::Rem;
+        else if (Tok.is(Token::exp))
+            Op = BinaryOp::Exp;
         advance();
-        Expr *Right = parseFactor();
+
+        // depending on the precedence of an operation
+        // if we parse an operation from left to right
+        // we will call `parseFactor()`, if as in the
+        // exponent case, we parse from right to left
+        // we will call again `parseTerm`
+        Expr *Right = nullptr;
+        if (Op == BinaryOp::Exp)
+            Right = parseTerm();
+        else
+            Right = parseFactor();
+
         Left = new BinaryOp(Op, Left, Right);
     }
 
@@ -128,7 +153,7 @@ Expr* Parser::parseFactor()
         if (!Res) error();
     }
 
-    while(!Tok.isOneOf(Token::r_paren, Token::star, Token::plus, Token::minus, Token::slash, Token::rem, Token::eoi))
+    while(!Tok.isOneOf(Token::r_paren, Token::star, Token::plus, Token::minus, Token::slash, Token::rem, Token::exp, Token::eoi))
         advance();
     
     return Res;

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.20.0)
 
 project("calc")
 
@@ -8,10 +8,9 @@ include(CheckLibraryExists)
 include(CheckCXXCompilerFlag)
 
 find_package(LLVM REQUIRED CONFIG)
-message("Found LLVM ${LLVM_PACKAGE_VERSION}, build type ${LLVM_BUILD_TYPE}")
+message("Found LLVM ${LLVM_PACKAGE_VERSION}, build type ${LLVM_BUILD_TYPE}, and dir ${LLVM_DIR}")
 list(APPEND CMAKE_MODULE_PATH ${LLVM_DIR})
 include(DetermineGCCCompatible)
-include(ChooseMSVCCRT)
 
 add_definitions(${LLVM_DEFINITIONS})
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})

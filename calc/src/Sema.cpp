@@ -66,8 +66,11 @@ namespace
         */
         virtual void visit(WithDecl &Node) override 
         {
+            // go through the variables
             for (auto I = Node.begin(), E = Node.end(); I != E; ++I)
             {
+                // check if it was already inserted, in that case
+                // raise the error
                 if (!Scope.insert(*I).second)
                     error(Twice, *I);
             }

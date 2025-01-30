@@ -44,6 +44,7 @@ namespace charinfo
 
 void Lexer::next(Token &token)
 {
+    // check if we have characters or we finished
     while (*BufferPtr && charinfo::isWhitespace(*BufferPtr))
         ++BufferPtr; // advance when find a whitespace
     
@@ -55,6 +56,8 @@ void Lexer::next(Token &token)
     }
     
     // we have a character, check if it is a letter
+    // in this case, we detect possible keywords, or
+    // identifiers.
     if (charinfo::isLetter(*BufferPtr))
     {
         // get where is the end of the token
@@ -67,7 +70,7 @@ void Lexer::next(Token &token)
             ++end;
         // found a token end, create a stringref
         // StringRef is created using the the pointers
-        llvm::StringRef Name{BufferPtr, end-BufferPtr};
+        llvm::StringRef Name{BufferPtr, static_cast<size_t>(end-BufferPtr)};
 
         // set a kind for the token
         Token::TokenKind kind = Name == "with" ? Token::KW_with : Token::ident;
@@ -103,6 +106,8 @@ void Lexer::next(Token &token)
             CASE('/', Token::slash);
             // is it reminder
             CASE('%', Token::rem);
+            // is it exponent
+            CASE('^', Token::exp);
             // is it l parenthesis
             CASE('(', Token::l_paren);
             // is it r parenthesis

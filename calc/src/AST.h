@@ -88,7 +88,8 @@ public:
         Minus, // a - b
         Mul,   // a * b
         Rem,   // a % b
-        Div    // a / b
+        Div,   // a / b
+        Exp,   // a ^ b
     };
 
 private:

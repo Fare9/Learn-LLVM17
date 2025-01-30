@@ -1,4 +1,7 @@
 #include "CodeGen.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/DerivedTypes.h"  // for PointerType
+#include "llvm/IR/Module.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
@@ -14,15 +17,13 @@ namespace
         Module *M;
         IRBuilder<> Builder;
         Type *VoidTy;
-        Type *Int8Ty;
         Type *Int32Ty;
         Type *Int64Ty;
-        // pointer types for generating pointers
-        PointerType *Int8PtrTy;
-        PointerType *Int32PtrTy;
-        PointerType *Int8PtrPtrTy;
-        PointerType *Int64PtrTy;
+        PointerType *PtrTy;
         Constant *Int32Zero;
+        Value *V;
+        // map name with value
+        StringMap<Value *> nameMap;
 
         // new types to keep some C++
         // exception handling functions.
@@ -40,9 +41,7 @@ namespace
         /// @brief in case exception is not handled unreachable path
         BasicBlock *UnreachableBB = nullptr;
 
-        Value *V;
-        // map name with value
-        StringMap<Value *> nameMap;
+        
 
     public:
         /**
@@ -53,15 +52,10 @@ namespace
         {
             // the types
             VoidTy = Type::getVoidTy(M->getContext());
-            Int8Ty = Type::getInt8Ty(M->getContext());
             Int32Ty = Type::getInt32Ty(M->getContext());
             Int64Ty = Type::getInt64Ty(M->getContext());
             // the pointer types!
-            Int8PtrTy = PointerType::get(Int8Ty, 0);
-            Int32PtrTy = Type::getInt32PtrTy(M->getContext());
-            Int8PtrPtrTy = Int8PtrTy->getPointerTo();
-            Int64PtrTy = Type::getInt64PtrTy(M->getContext());
-
+            PtrTy = PointerType::getUnqual(M->getContext());
             Int32Zero = ConstantInt::get(Int32Ty, 0, true);
         }
 
@@ -73,7 +67,7 @@ namespace
         {
             // create function type for Main
             FunctionType *MainFty = FunctionType::get(
-                Int32Ty, {Int32Ty, Int8PtrPtrTy}, false);
+                Int32Ty, {Int32Ty, PtrTy}, false);
             // now create a Main function
             Function *MainFn = Function::Create(MainFty, GlobalValue::ExternalLinkage, "main", M);
 
@@ -103,7 +97,7 @@ namespace
         virtual void visit(WithDecl &Node) override
         {
             // type of read function
-            FunctionType *ReadFty = FunctionType::get(Int32Ty, {Int8PtrTy}, false);
+            FunctionType *ReadFty = FunctionType::get(Int32Ty, {PtrTy}, false);
             // function for reading
             Function *ReadFn = Function::Create(ReadFty, GlobalValue::ExternalLinkage, "calc_read", M);
 
@@ -120,8 +114,7 @@ namespace
                     StrText,
                     Twine(Var).concat(".str"));
                 // now create the call to calc_read() with the just created variable
-                Value *Ptr = Builder.CreateInBoundsGEP(Str->getType(), Str, {Int32Zero}, "ptr");
-                CallInst *Call = Builder.CreateCall(ReadFty, ReadFn, {Ptr});
+                CallInst *Call = Builder.CreateCall(ReadFty, ReadFn, {Str});
                 nameMap[Var] = Call;
             }
 
@@ -133,8 +126,13 @@ namespace
         /// @param Node
         virtual void visit(Factor &Node) override
         {
+            // If the Factor is an identifier
+            // use the memory where the variable
+            // is stored
             if (Node.getKind() == Factor::Ident)
                 V = nameMap[Node.getVal()];
+            // In other case, create an integer
+            // value to use
             else
             {
                 int intval;
@@ -143,6 +141,7 @@ namespace
             }
         }
 
+    
         virtual void visit(BinaryOp &Node) override
         {
             Node.getLeft()->accept(*this);
@@ -191,7 +190,77 @@ namespace
                 V = Builder.CreateSRem(Left, Right);
             }
                 break;
+            case BinaryOp::Exp:
+                V = generateExponent(Left, Right);
+                break;
             }
+        }
+
+        /// @brief Generate an exponent operation as a loop, and a multiplication.
+        /// @param base operand which represents the base
+        /// @param exponent operand which represents the exponent
+        /// @return returned value
+        llvm::Value* generateExponent(llvm::Value* base, llvm::Value* exponent) {
+            // Get current function and context
+            llvm::Function* function = Builder.GetInsertBlock()->getParent();
+            llvm::LLVMContext& context = function->getContext();
+
+            // Create blocks for zero check and the main computation
+            llvm::BasicBlock* entryBlock = Builder.GetInsertBlock();
+            llvm::BasicBlock* loopBlock = llvm::BasicBlock::Create(context, "exp.loop", function);
+            llvm::BasicBlock* exitBlock = llvm::BasicBlock::Create(context, "exp.exit", function);
+
+            // Check if exponent is zero
+            llvm::BasicBlock* zeroTrueBlock;
+            llvm::BasicBlock* zeroFalseBlock;
+            createICmpEq(exponent, Int32Zero, zeroTrueBlock, zeroFalseBlock);
+            
+            // If exponent is zero, return 1
+            Builder.SetInsertPoint(zeroTrueBlock);
+            llvm::Value* one = llvm::ConstantInt::get(base->getType(), 1);
+            Builder.CreateBr(exitBlock);
+
+            // Main computation block
+            Builder.SetInsertPoint(zeroFalseBlock);
+
+            // Initialize counter and result
+            llvm::Type* int32Ty = llvm::Type::getInt32Ty(context);
+            llvm::Value* counter = Builder.CreateAlloca(int32Ty);
+            Builder.CreateStore(exponent, counter);
+            llvm::Value* result = base;
+
+            // Branch to loop
+            Builder.CreateBr(loopBlock);
+
+            // Loop block
+            Builder.SetInsertPoint(loopBlock);
+            llvm::PHINode* resultPhi = Builder.CreatePHI(base->getType(), 2, "exp.result");
+            resultPhi->addIncoming(result, zeroFalseBlock);
+
+            // Multiply base by itself
+            llvm::Value* newResult = Builder.CreateNSWMul(resultPhi, base);
+
+            // Decrement counter
+            llvm::Value* currentCount = Builder.CreateLoad(int32Ty, counter);
+            llvm::Value* newCount = Builder.CreateSub(currentCount, 
+                llvm::ConstantInt::get(int32Ty, 1));
+            Builder.CreateStore(newCount, counter);
+
+            // Update PHI node
+            resultPhi->addIncoming(newResult, loopBlock);
+
+            // Check if counter > 1
+            llvm::Value* one_const = llvm::ConstantInt::get(int32Ty, 1);
+            llvm::Value* condition = Builder.CreateICmpSGT(newCount, one_const);
+            Builder.CreateCondBr(condition, loopBlock, exitBlock);
+
+            // Exit block
+            Builder.SetInsertPoint(exitBlock);
+            llvm::PHINode* finalResult = Builder.CreatePHI(base->getType(), 2, "exp.final");
+            finalResult->addIncoming(one, zeroTrueBlock);
+            finalResult->addIncoming(newResult, loopBlock);
+
+            return finalResult;
         }
 
         /// @brief Create a comparison instruction to check in the
@@ -246,7 +315,7 @@ namespace
                 // which is the type information of integer
                 TypeInfo = new GlobalVariable(
                     *M,
-                    Int8PtrTy,
+                    PtrTy,
                     /*isConstant*/ true,
                     /*Linking*/ GlobalValue::ExternalLinkage,
                     /*initializer*/ nullptr,
@@ -256,7 +325,7 @@ namespace
                 createFunc(AllocEHFty,                 // Type of function
                            AllocEHFn,                  // Function itself
                            "__cxa_allocate_exception", // name of the function
-                           Int8PtrTy,                  // return type
+                           PtrTy,                      // return type
                            {Int64Ty});                 // parameter list
 
                 // Declare the __cxa_throw function.
@@ -264,7 +333,7 @@ namespace
                            ThrowEHFn,                          // Function itself
                            "__cxa_throw",                      // name of the function
                            VoidTy,                             // return void
-                           {Int8PtrTy, Int8PtrTy, Int8PtrTy}); // parameters of the function
+                           {PtrTy, PtrTy, PtrTy}); // parameters of the function
 
                 // Declare personality function.
                 // this function will be used for stack unwinding on Linux
@@ -306,7 +375,7 @@ namespace
             CallInst *EH = Builder.CreateCall(AllocEHFty, AllocEHFn, {PayloadSz});
 
             // Store payload value
-            Value *PayloadPtr = Builder.CreateBitCast(EH, Int32PtrTy);
+            Value *PayloadPtr = Builder.CreateBitCast(EH, PtrTy);
             Builder.CreateStore(ConstantInt::get(Int32Ty, PayloadVal, true), PayloadPtr);
 
             // Raise the exception with a call to __cxa_throw function
@@ -318,7 +387,7 @@ namespace
                 ThrowEHFn,                                                                               // function
                 UnreachableBB,                                                                           // block after invoke
                 LPadBB,                                                                                  // block where flow jumps with exception
-                {EH, ConstantExpr::getBitCast(TypeInfo, Int8PtrTy), ConstantPointerNull::get(Int8PtrTy)} // parameters
+                {EH, ConstantExpr::getBitCast(TypeInfo, PtrTy), ConstantPointerNull::get(PtrTy)} // parameters
             );
         }
 
@@ -329,12 +398,12 @@ namespace
             Function *TypeIdFn;
 
             // function to obtain the typeid of an exception
-            createFunc(TypeIdFty, TypeIdFn, "llvm.eh.typeid.for", Int32Ty, {Int8PtrTy});
+            createFunc(TypeIdFty, TypeIdFn, "llvm.eh.typeid.for", Int32Ty, {PtrTy});
 
             // function called at the beginning of catch block
             FunctionType *BeginCatchFty;
             Function *BeginCatchFn;
-            createFunc(BeginCatchFty, BeginCatchFn, "__cxa_begin_catch", Int8PtrTy, {Int8PtrTy});
+            createFunc(BeginCatchFty, BeginCatchFn, "__cxa_begin_catch", PtrTy, {PtrTy});
 
             // function called at the end of the catch block
             FunctionType *EndCatchFty;
@@ -344,15 +413,15 @@ namespace
             // Function for calling Puts with the error message.
             FunctionType *PutsFty;
             Function *PutsFn;
-            createFunc(PutsFty, PutsFn, "puts", Int32Ty, {Int8PtrTy});
+            createFunc(PutsFty, PutsFn, "puts", Int32Ty, {PtrTy});
 
             LandingPadInst *Exc = Builder.CreateLandingPad(
-                StructType::get(Int8PtrTy, Int32Ty), 1, "exc");
-            Exc->addClause(ConstantExpr::getBitCast(TypeInfo, Int8PtrTy));
+                StructType::get(PtrTy, Int32Ty), 1, "exc");
+            Exc->addClause(ConstantExpr::getBitCast(TypeInfo, PtrTy));
             // now create a call to llvm.eh.typeid.for for extracting the TypeInfo from
             // the exception
             Value *Sel = Builder.CreateExtractValue(Exc, {1}, "exc.sel");
-            CallInst *Id = Builder.CreateCall(TypeIdFty, TypeIdFn, {ConstantExpr::getBitCast(TypeInfo, Int8PtrTy)});
+            CallInst *Id = Builder.CreateCall(TypeIdFty, TypeIdFn, {ConstantExpr::getBitCast(TypeInfo, PtrTy)});
 
             // Now we generate the IR for the comparison with the int type
             BasicBlock *TrueDest, *FalseDest;
@@ -370,7 +439,7 @@ namespace
 
             // to handle the exception we will just print
             // a message to the user
-            Value *MsgPtr = Builder.CreateGlobalStringPtr(
+            Value *MsgPtr = Builder.CreateGlobalString(
                 "Divide by zero!",
                 "msg",
                 0,
@@ -389,8 +458,8 @@ namespace
 void CodeGen::compile(AST *Tree)
 {
     LLVMContext Ctx;
-    Module *M = new Module("calc.expr", Ctx);
-    ToIRVisitor ToIR(M);
+    auto M = std::make_unique<Module>("calc.expr", Ctx);
+    ToIRVisitor ToIR(M.get());
     ToIR.run(Tree);
     M->print(outs(), nullptr);
 }

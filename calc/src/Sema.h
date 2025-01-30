@@ -1,3 +1,8 @@
+/**
+ * @file Sema.h
+ * @brief This calls although not always necessary, it will implement a semantic
+ * analysis in the AST.
+ */
 #ifndef SEMA_H
 #define SEMA_H
 

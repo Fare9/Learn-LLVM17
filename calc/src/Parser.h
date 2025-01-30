@@ -1,3 +1,9 @@
+/***
+ * @file Parser.h
+ * @brief The parser manages the tokens for generating the AST of the
+ * code. It must properly parse the tokens to properly keep the precedence
+ * from the expressions.
+ */
 #ifndef PARSER_H
 #define PARSER_H
 
@@ -16,6 +22,11 @@ class Parser
     Token Tok;
     //! cache for error
     bool HasError;
+
+
+    //!----------------------------------------------------
+    //! Utility methods used by the Parser to generate the
+    //! different objects from the model of the AST.
 
     /**
      * @brief Print an error message and
@@ -81,6 +92,7 @@ class Parser
      * @return whole program represented by an AST.
      */
     AST *parseCalc();
+
     //! Parsers for the expressions, a recursive descent parser
     //! with a look ahead of 1 token
     /**
@@ -117,6 +129,7 @@ public:
     Parser(Lexer &Lex) : Lex(Lex),
                          HasError(false)
     {
+        // retrieve the first token
         advance();
     }
 
@@ -129,6 +142,13 @@ public:
         return HasError;
     }
 
+    /**
+     * @brief public method to parse our AST, this can be used
+     * to initialize values, and call the internal methods to
+     * parse the expressions.
+     * 
+     * @return pointer to an AST.
+     */
     AST *parse();
 };
 
