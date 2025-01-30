@@ -34,3 +34,6 @@
 # cmake build
 build/
 bin/
+
+# vscode
+.vscode
